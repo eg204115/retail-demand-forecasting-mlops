@@ -1,0 +1,98 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shelfcast"
+version = "0.1.0"
+description = "SKU-level retail demand forecasting and replenishment - an end-to-end MLOps reference implementation"
+readme = "README.md"
+requires-python = ">=3.10,<3.12"
+license = { text = "MIT" }
+authors = [{ name = "Nethmi Poornima" }]
+keywords = ["mlops", "forecasting", "pyspark", "mlflow", "feast", "retail"]
+
+dependencies = [
+    "pandas>=2.1",
+    "numpy>=1.26",
+    "pyarrow>=14.0",
+    "pyyaml>=6.0",
+    "scikit-learn>=1.4",
+    "lightgbm>=4.3",
+    # <3: MLflow 3 removed stage transitions, which the promotion gate is built on.
+    "mlflow>=2.13,<3",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+spark = [
+    "pyspark==3.5.1",
+    "delta-spark==3.2.0",
+]
+featurestore = [
+    "feast[redis]>=0.37",
+]
+serving = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "prometheus-fastapi-instrumentator>=7.0",
+]
+monitoring = [
+    # <0.5: the Report / metric_preset API in src/monitoring/drift.py is 0.4.x.
+    "evidently>=0.4.25,<0.5",
+    "pandera>=0.19,<0.21",
+]
+deep = [
+    "torch>=2.2",
+]
+orchestration = [
+    "apache-airflow==2.9.2",
+]
+dev = [
+    "pytest>=8.1",
+    "pytest-cov>=5.0",
+    "httpx>=0.27",
+    "ruff>=0.4",
+    "black>=24.3",
+    "mypy>=1.9",
+    "pre-commit>=3.7",
+    "types-PyYAML",
+]
+
+[project.scripts]
+shelfcast = "src.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "PTH"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "spark: tests that need a local SparkSession (slow)",
+    "integration: tests that need docker-compose services running",
+]
