@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# Testing / typing / linting
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Data (never commit raw or derived data)
+data/**
+!data/**/.gitkeep
+*.parquet
+*.csv
+*.zip
+
+# Artifacts, models, reports
+artifacts/**
+!artifacts/**/.gitkeep
+mlruns/
+mlartifacts/
+*.pkl
+*.joblib
+*.txt.model
+
+# Feast
+.feast/
+feature_repo/data/
+*.db
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
+# Secrets / local env
+.env
+.env.local
+*.pem
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Notebooks
+.ipynb_checkpoints/

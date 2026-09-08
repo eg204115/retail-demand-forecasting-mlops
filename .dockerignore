@@ -1,0 +1,13 @@
+.git
+.github
+data
+artifacts
+mlruns
+notebooks
+docs
+infra
+tests
+.venv
+**/__pycache__
+*.parquet
+*.csv
