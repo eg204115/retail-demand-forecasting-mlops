@@ -1,0 +1,8 @@
+aws_region          = "ap-south-1"
+environment         = "staging"
+image_tag           = "replace-with-commit-sha"
+vpc_id              = "vpc-xxxxxxxx"
+subnet_ids          = ["subnet-xxxxxxxx", "subnet-yyyyyyyy"]
+mlflow_tracking_uri = "https://mlflow.internal.example.com"
+model_bucket_arn    = "arn:aws:s3:::shelfcast-models"
+redis_host          = "shelfcast-redis.xxxxxx.ng.0001.aps1.cache.amazonaws.com"
