@@ -81,6 +81,11 @@ def load_head(uri: str) -> tuple[Any, dict]:
     return model, metadata
 
 
+def _resolve(explicit: str | None, env_var: str, default: str) -> str:
+    """Explicit argument, then environment, then the built-in default."""
+    return explicit or os.getenv(env_var) or default
+
+
 @lru_cache(maxsize=1)
 def load_models(name: str | None = None, stage: str | None = None) -> ModelBundle:
     """Load both heads from the MLflow registry once per process.
@@ -92,14 +97,14 @@ def load_models(name: str | None = None, stage: str | None = None) -> ModelBundl
     one URI for both heads would make P90 equal P50 and silently zero the safety
     stock, so the two are addressed separately and by name.
     """
-    base = name or os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)
-    stage = stage or os.getenv("MODEL_STAGE", DEFAULT_STAGE)
+    base = _resolve(name, "MODEL_NAME", DEFAULT_MODEL_NAME)
+    stage_name = _resolve(stage, "MODEL_STAGE", DEFAULT_STAGE)
 
     models: dict[str, Any] = {}
     categoricals: dict[str, list[str]] = {}
     for label, head in HEADS.items():
         # MODEL_URI_P50 / MODEL_URI_P90 override the registry for local runs.
-        uri = os.getenv(f"MODEL_URI_{label.upper()}") or head_uri(base, head, stage)
+        uri = os.getenv(f"MODEL_URI_{label.upper()}") or head_uri(base, head, stage_name)
         try:
             model, metadata = load_head(uri)
         except Exception as exc:
@@ -108,8 +113,8 @@ def load_models(name: str | None = None, stage: str | None = None) -> ModelBundl
         models[label] = model
         categoricals = categoricals or dict(metadata.get("categoricals") or {})
 
-    version = os.getenv("MODEL_VERSION", f"{base}/{stage}")
-    log.info("loaded %d model heads for %s/%s", len(models), base, stage)
+    version = os.getenv("MODEL_VERSION", f"{base}/{stage_name}")
+    log.info("loaded %d model heads for %s/%s", len(models), base, stage_name)
     return ModelBundle(models, version, categoricals)
 
 
@@ -156,7 +161,8 @@ def build_frame(
         # Spark's dayofweek is 1=Sunday; the calendar features must be encoded the
         # same way here or every day-of-week feature is off by one against training.
         dow = target.isoweekday() % 7 + 1
-        row = dict(features)
+        # Numeric features plus ids and a date, so the row is deliberately mixed.
+        row: dict[str, Any] = dict(features)
         row.update(
             {
                 "store_id": store_id,

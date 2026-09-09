@@ -11,6 +11,7 @@ import argparse
 import subprocess
 import zipfile
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -66,7 +67,9 @@ def write_sample(raw_dir: Path, n_items: int = 40, n_stores: int = 3, n_days: in
             weekly = 1 + 0.35 * np.sin(np.arange(n_days) * 2 * np.pi / 7)
             trend = np.linspace(1.0, rng.uniform(0.8, 1.3), n_days)
             sales = rng.poisson(np.clip(base * weekly * trend, 0.05, None))
-            row = {"id": f"{item}_{store}", "item_id": item, "store_id": store}
+            # Wide M5 layout: three id columns then one column per day, so the
+            # value type is genuinely mixed.
+            row: dict[str, Any] = {"id": f"{item}_{store}", "item_id": item, "store_id": store}
             row.update({f"d_{i + 1}": int(v) for i, v in enumerate(sales)})
             rows.append(row)
             for wk in calendar["wm_yr_wk"].unique():
