@@ -34,7 +34,11 @@ features_schema = DataFrameSchema(
         "roll_mean_28": Column(float, Check.ge(0), nullable=True),
         "zero_share_28": Column(float, Check.in_range(0, 1), nullable=True),
         "sell_price": Column(float, Check.gt(0), nullable=True),
-        "is_weekend": Column(int, Check.isin([0, 1])),
+        # Pinned to int32, not bare `int`: pandera resolves `int` to the platform
+        # default (int64 on Linux), while the flag is written by Spark's
+        # cast("int") -> INT32 and declared Int32 in the Feast view. A widening
+        # here should fail the contract, not be silently accepted.
+        "is_weekend": Column("int32", Check.isin([0, 1])),
     },
     strict=False,
     name="features",
