@@ -1,0 +1,173 @@
+{
+  "title": "Shelfcast serving",
+  "uid": "shelfcast-serving",
+  "tags": ["shelfcast", "mlops"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Forecast rows / sec",
+      "description": "Throughput of the scoring service. A flat line during a batch window means the nightly job is not reaching the API path.",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(shelfcast_predictions_total[5m]))",
+          "legendFormat": "rows/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] }
+    },
+    {
+      "type": "stat",
+      "title": "Feature-store miss rate",
+      "description": "Share of requests scored without online features. Sustained misses mean the materialisation job is late and forecasts are calendar-only.",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(shelfcast_feature_misses_total[5m])) / clamp_min(sum(rate(shelfcast_predictions_total[5m])), 0.001)",
+          "legendFormat": "miss rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "5xx rate",
+      "description": "A 503 here is the model failing to load, not a bad request.",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m]))",
+          "legendFormat": "5xx/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.01 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Predicted units (median)",
+      "description": "The prediction distribution itself. A step change here without a matching change in traffic is the first visible sign of drift.",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(shelfcast_prediction_units_bucket[30m])) by (le))",
+          "legendFormat": "p50 units",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 2 }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Prediction latency",
+      "description": "p50/p95/p99 end to end. The model is loaded at startup, so a cold-start spike here means the container is flapping.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(shelfcast_predict_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "p50 {{endpoint}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(shelfcast_predict_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "p95 {{endpoint}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(shelfcast_predict_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "p99 {{endpoint}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "lineWidth": 1, "fillOpacity": 5 } },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Predicted units distribution",
+      "description": "p50 / p90 / p99 of the returned forecasts. Widening spread means the model is less certain, which feeds straight into safety stock.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(shelfcast_prediction_units_bucket[30m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum(rate(shelfcast_prediction_units_bucket[30m])) by (le))",
+          "legendFormat": "p90",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(shelfcast_prediction_units_bucket[30m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "lineWidth": 1, "fillOpacity": 5 } },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests by endpoint",
+      "description": "Split by endpoint so a batch caller and the store app can be told apart during an incident.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[5m])) by (handler, status)",
+          "legendFormat": "{{handler}} {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "lineWidth": 1, "fillOpacity": 10 } },
+        "overrides": []
+      }
+    }
+  ]
+}

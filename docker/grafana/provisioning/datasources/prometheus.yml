@@ -1,0 +1,12 @@
+# Provisioned so `make stack-up` gives a working dashboard rather than an empty
+# Grafana someone has to click through on every fresh clone.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

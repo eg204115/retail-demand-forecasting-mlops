@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: shelfcast-serving
+    metrics_path: /metrics
+    static_configs:
+      # host.docker.internal works on Docker Desktop (Windows/macOS).
+      - targets: ["host.docker.internal:8000"]
