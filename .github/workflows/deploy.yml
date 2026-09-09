@@ -22,6 +22,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: vars.AWS_REGION != ''
     environment: ${{ inputs.environment || 'staging' }}
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
@@ -61,6 +62,7 @@ jobs:
           docker rm -f smoke
 
       - name: Deploy to ECS
+        id: ecs
         run: |
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" \
@@ -69,8 +71,11 @@ jobs:
             --query 'service.deployments[0].id' --output text
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
 
+      # Only meaningful once ECS was actually told to deploy. Without this guard a
+      # credentials failure triggers a "rollback" that has nothing to roll back to,
+      # turning one red step into three.
       - name: Roll back on failure
-        if: failure()
+        if: failure() && steps.ecs.outcome == 'failure'
         run: |
           echo "::error::Deployment failed - rolling back to the previous task definition"
           PREVIOUS=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
