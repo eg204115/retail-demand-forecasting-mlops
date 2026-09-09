@@ -1,0 +1,64 @@
+name: Drift check
+
+on:
+  schedule:
+    - cron: "0 6 * * *"     # daily, before the replenishment run
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write            # needed to trigger the training workflow
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    env:
+      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[monitoring,dev]"
+
+      - name: Run the drift report
+        id: drift
+        continue-on-error: true
+        run: python -m src.monitoring.drift --config conf/config.yaml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: drift-report-${{ github.run_number }}
+          path: artifacts/reports/drift_report.html
+
+      - name: Open an issue when the gate trips
+        if: steps.drift.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const s = JSON.parse(fs.readFileSync('artifacts/reports/drift_summary.json', 'utf8'));
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Drift detected: ${(s.drift_share * 100).toFixed(0)}% of features moved`,
+              labels: ['drift', 'ml-ops'],
+              body: [
+                `**Drifted features:** ${s.drifted_features.join(', ') || 'none'}`,
+                `**Drift share:** ${s.drift_share}`,
+                `**Live WMAPE:** ${s.live_wmape ?? 'n/a'} (training: ${s.training_wmape ?? 'n/a'})`,
+                '',
+                `Report artifact: run #${context.runNumber}.`,
+                'Retraining has been triggered automatically.',
+              ].join('\n'),
+            });
+
+      # Input drift alone does not justify a retrain (holidays move features every
+      # year); the module only recommends one when performance also degrades.
+      - name: Trigger retraining
+        if: steps.drift.outcome == 'failure'
+        run: gh workflow run train.yml --ref ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

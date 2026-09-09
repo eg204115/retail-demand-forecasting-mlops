@@ -1,0 +1,100 @@
+name: Train and promote
+
+on:
+  schedule:
+    - cron: "0 2 * * 1"     # Mondays 02:00 UTC, after weekend sales land
+  workflow_dispatch:
+    inputs:
+      force_promote:
+        description: "Promote even if the gate fails (requires a written reason)"
+        type: boolean
+        default: false
+      reason:
+        description: "Why is this run being forced?"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write          # OIDC federation - no long-lived AWS keys in secrets
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TRAINING_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - run: pip install -e ".[spark,featurestore,monitoring,dev]"
+
+      - name: Build features
+        run: python -m src.features.build_features --config conf/config.yaml
+
+      - name: Validate feature contract
+        run: python -m tests.data_quality.validate --layer features
+
+      - name: Train
+        run: python -m src.training.train --config conf/config.yaml --run-name "ci-${{ github.run_number }}"
+
+      # The gate exits non-zero when the candidate loses. continue-on-error keeps the
+      # verdict available to the next step instead of ending the job on a red X.
+      - name: Backtest gate
+        id: gate
+        continue-on-error: true
+        run: python -m src.training.evaluate --config conf/config.yaml
+
+      - name: Summarise the verdict
+        run: |
+          python - <<'PY' >> $GITHUB_STEP_SUMMARY
+          import json, pathlib
+          v = json.loads(pathlib.Path("artifacts/reports/backtest.json").read_text())
+          print("## Backtest verdict\n")
+          print(f"- **Result:** {'PASS' if v['passed'] else 'FAIL'}")
+          print(f"- Candidate WMAPE: `{v['candidate_wmape']:.4f}`")
+          print(f"- Baseline WMAPE: `{v['baseline_wmape']}`")
+          print(f"- Production WMAPE: `{v['production_wmape']}`")
+          for r in v["reasons"]:
+              print(f"- :warning: {r}")
+          print("\n| fold | wmape | rmse | bias |\n|---|---|---|---|")
+          for f in v["folds"]:
+              print(f"| {f['fold']} | {f['wmape']:.4f} | {f['rmse']:.3f} | {f['bias']:.4f} |")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backtest-reports-${{ github.run_number }}
+          path: artifacts/reports/
+
+      # The gate fails closed, so a forced promotion has to say so explicitly
+      # rather than inheriting a verdict it did not earn.
+      - name: Promote
+        if: steps.gate.outcome == 'success'
+        run: python -m src.training.registry promote --config conf/config.yaml
+
+      - name: Promote (forced)
+        if: steps.gate.outcome == 'failure' && inputs.force_promote
+        run: |
+          echo "::warning::Forced promotion. Reason: ${{ inputs.reason }}"
+          test -n "${{ inputs.reason }}" || { echo "::error::A reason is required"; exit 1; }
+          python -m src.training.registry promote --config conf/config.yaml --skip-gate
+
+      - name: Fail the run when the gate blocked promotion
+        if: steps.gate.outcome == 'failure' && !inputs.force_promote
+        run: |
+          echo "::error::Candidate did not clear the promotion gate; production is unchanged."
+          exit 1
