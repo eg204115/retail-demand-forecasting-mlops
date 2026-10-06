@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import timedelta
 from pathlib import Path
 
@@ -24,6 +25,16 @@ from src.common.metrics import wmape
 log = get_logger(__name__)
 
 TARGET = "units"
+
+# Exit codes are part of this module's contract with CI and the Makefile.
+#
+# The gate tripping and the check failing to run are different events that need
+# different responses - retrain on the first, page a human on the second - so they
+# get different codes. Collapsing both into 1 is what let a crashed run be read as
+# "drift detected" and sent looking for a summary file that was never written.
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_GATE_TRIPPED = 2
 
 MONITORED = [
     "lag_1",
@@ -37,6 +48,24 @@ MONITORED = [
     "is_discounted",
     "is_event",
 ]
+
+
+def emit_github_output(**values: object) -> None:
+    """Publish step outputs when running under GitHub Actions; a no-op anywhere else.
+
+    These are what the workflow branches on. An output is only ever written once the
+    run has reached its conclusion, so the workflow can treat "no output" as "this
+    check did not complete" without having to guess from an exit code.
+    """
+    path = os.environ.get("GITHUB_OUTPUT")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            for key, value in values.items():
+                fh.write(f"{key}={value}\n")
+    except OSError:  # pragma: no cover - never fail a run over telemetry
+        log.warning("could not write GITHUB_OUTPUT", exc_info=True)
 
 
 def split_windows(df: pd.DataFrame, window_days: int) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -119,18 +148,37 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
-    path = args.input or (Path(cfg.paths.features) / "sales_features")
+
+    # Created before anything can fail, so a crashed run leaves the same directory a
+    # successful one does. Consumers then find an empty directory rather than no
+    # directory at all, which is the difference between "no drift to report" and a
+    # stack trace from whatever tried to read it.
+    out_dir = Path(cfg.paths.reports)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    path = Path(args.input) if args.input else Path(cfg.paths.features) / "sales_features"
+    if not path.exists():
+        log.error(
+            "no feature table at %s - build it first (`shelfcast features`) or point "
+            "--input at one; the drift check has nothing to compare without it",
+            path,
+        )
+        raise SystemExit(EXIT_ERROR)
+
     df = pd.read_parquet(path)
     df["date"] = pd.to_datetime(df["date"])
 
     reference, current = split_windows(df, int(cfg.monitoring.reference_window_days))
     log.info("reference=%d rows | current=%d rows", len(reference), len(current))
 
-    out_dir = Path(cfg.paths.reports)
     if reference.empty or current.empty:
-        raise SystemExit(
-            f"not enough history to compare: reference={len(reference)} current={len(current)} rows"
+        log.error(
+            "not enough history to compare: reference=%d current=%d rows (need %d days either side)",
+            len(reference),
+            len(current),
+            int(cfg.monitoring.reference_window_days),
         )
+        raise SystemExit(EXIT_ERROR)
 
     summary = summarise(evidently_report(reference, current, out_dir))
     summary.update(performance_check(current, cfg))
@@ -144,10 +192,19 @@ def main(argv: list[str] | None = None) -> None:
 
     (out_dir / "drift_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     log.info("drift share %.2f | drifted: %s", summary["drift_share"], summary["drifted_features"])
+
+    # Written only here, at the end of a complete run: the workflow reads the absence
+    # of these outputs as "the check did not finish" and fails the job loudly instead
+    # of mistaking a crash for a drift verdict.
+    emit_github_output(
+        retrain_recommended="true" if summary["retrain_recommended"] else "false",
+        drift_share=f"{summary['drift_share']:.4f}",
+    )
+
     if summary["retrain_recommended"]:
         log.warning("DRIFT GATE TRIPPED - retraining recommended")
-
-    raise SystemExit(1 if summary["retrain_recommended"] else 0)
+        raise SystemExit(EXIT_GATE_TRIPPED)
+    raise SystemExit(EXIT_OK)
 
 
 if __name__ == "__main__":

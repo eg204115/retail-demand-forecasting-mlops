@@ -193,6 +193,28 @@ Images are tagged by commit SHA (never `:latest`) so a rollback has something to
 address. `/health` is shallow, `/ready` scores a real row — a readiness probe that
 only checks the process keeps routing traffic to a container with no model.
 
+### CI configuration
+
+Repository **variables**: `AWS_REGION`, and `DATA_URI` — the S3 location of the
+feature table, which `drift-check.yml` syncs before it runs. The scheduled job has
+no data otherwise: `data/**` is gitignored, so nothing in the checkout can supply it.
+
+Repository **secrets**: `MLFLOW_TRACKING_URI`, `AWS_TRAINING_ROLE_ARN` (assumed via
+OIDC — no long-lived keys).
+
+The drift module reports through three channels, and the workflow reads all three:
+
+| Exit code | Meaning | Writes `drift_summary.json`? |
+|---|---|---|
+| `0` | ran clean, no retrain needed | yes |
+| `2` | ran clean, **gate tripped** | yes |
+| `1` | could not run | no |
+
+The workflow branches on the `retrain_recommended` step output rather than on the
+exit status, because only a run that reached a verdict emits one. An absent output
+means the check failed to complete, which fails the job — a crash is not a finding
+of "no drift", and it is not a finding of drift either.
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).

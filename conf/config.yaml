@@ -12,7 +12,6 @@ paths:
 spark:
   app_name: shelfcast-features
   master: "local[*]"
-  # Tuned in docs/spark-optimisation.md - do not change without re-running the benchmark.
   shuffle_partitions: 200
   driver_memory: 8g
   executor_memory: 8g
@@ -37,7 +36,6 @@ data:
 
 model:
   name: lightgbm_quantile
-  # P50 drives the point forecast, P90 sizes the safety stock.
   quantiles: [0.5, 0.9]
   params:
     objective: quantile
