@@ -61,7 +61,7 @@ def emit_github_output(**values: object) -> None:
     if not path:
         return
     try:
-        with open(path, "a", encoding="utf-8") as fh:
+        with Path(path).open("a", encoding="utf-8") as fh:
             for key, value in values.items():
                 fh.write(f"{key}={value}\n")
     except OSError:  # pragma: no cover - never fail a run over telemetry
