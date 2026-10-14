@@ -58,10 +58,9 @@ drift-demo:  ## Inject a promo shift into serving data and show monitoring catch
 	$(PY) -m src.monitoring.drift --config $(CONF) --input data/features/sales_features_drifted \
 		|| echo ">>> drift gate tripped as expected (this is the demo working)"
 
-stack-up:  ## Start MLflow, MinIO, Redis, Postgres, Prometheus, Grafana
+stack-up:  ## Start MLflow, Redis, Postgres, Prometheus, Grafana
 	docker compose up -d
 	echo "MLflow    http://localhost:5000"
-	echo "MinIO     http://localhost:9001"
 	echo "Grafana   http://localhost:3000"
 
 stack-down:  ## Stop the local stack

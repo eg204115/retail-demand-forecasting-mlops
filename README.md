@@ -36,7 +36,7 @@ Requires Python 3.10 or 3.11, Java 17 (for PySpark) and Docker.
 
 ```bash
 make setup                 # editable install with all extras + pre-commit hooks
-make stack-up              # MLflow, MinIO, Redis, Postgres, Prometheus, Grafana
+make stack-up              # MLflow, Redis, Postgres, Prometheus, Grafana
 shelfcast ingest --sample  # synthetic data with the M5 schema, no Kaggle account needed
 shelfcast bronze
 shelfcast features
@@ -58,7 +58,6 @@ curl -s -X POST localhost:8000/predict -H 'content-type: application/json' -d '{
 | MLflow tracking + registry | http://localhost:5000 |
 | Grafana (serving dashboard) | http://localhost:3000 |
 | Prometheus | http://localhost:9090 |
-| MinIO console | http://localhost:9001 |
 
 For the real dataset, put Kaggle credentials in `~/.kaggle/kaggle.json` and drop the
 `--sample` flag. Every command is also a Make target (`make train`) and a module
